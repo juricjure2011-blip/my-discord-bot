@@ -23,11 +23,11 @@ def keep_alive():
 # --- 2. DISCORD BOT SETUP ---
 intents = discord.Intents.default()
 intents.members = True          # Required to track role updates and scan members
-intents.message_content = True  # Required to read the !bgrefresh command
+intents.message_content = True  # Required to read the commands
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Configuration: Replace these placeholder numbers with your actual Discord Role IDs
+# Configuration: Your actual Discord Role IDs
 ROLE_MAPPING = {
     1457418827028500661: "youtube",
     1461009316424318997: "tiktok",
@@ -61,7 +61,7 @@ async def on_member_update(before, after):
                     await channel.send(f"{after.mention} joined from {source}")
                 break # Only process the first matching role found
 
-# Command: Clears the channel and re-checks everyone's roles
+# Command 1: Clears the channel and re-checks everyone's roles
 @bot.command()
 @commands.has_permissions(manage_messages=True) # Limits command to staff/admins
 async def bgrefresh(ctx):
@@ -94,6 +94,54 @@ async def bgrefresh(ctx):
                 break # Move to the next member once a valid role is found
 
     await ctx.send(f"Refresh complete! Logged {count} members to {channel.mention}.")
+
+# Command 2: Displays real-time server referral statistics
+@bot.command()
+async def bgstats(ctx):
+    # Initialize counts for each role name
+    stats = {name: 0 for name in ROLE_MAPPING.values()}
+    no_role_count = 0
+    total_members = 0
+
+    # Inform the user that the scan is starting
+    progress_msg = await ctx.send("📊 Calculating server referral statistics...")
+
+    # Scan all members in the server
+    async for member in ctx.guild.fetch_members(limit=None):
+        if member.bot:
+            continue
+            
+        total_members += 1
+        has_tracked_role = False
+        
+        for role in member.roles:
+            if role.id in ROLE_MAPPING:
+                role_name = ROLE_MAPPING[role.id]
+                stats[role_name] += 1
+                has_tracked_role = True
+                break
+                
+        if not has_tracked_role:
+            no_role_count += 1
+
+    # Format the stats beautifully into a Discord Embed message
+    embed = discord.Embed(
+        title="📈 Server Referral Statistics", 
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
+    
+    # Add fields for the tracked roles
+    for role_name, count in stats.items():
+        display_name = role_name.title()
+        embed.add_field(name=f"🔗 {display_name}", value=f"**{count}** members", inline=False)
+        
+    embed.add_field(name="❓ Unassigned / Other", value=f"**{no_role_count}** members", inline=False)
+    embed.set_footer(text=f"Total Members Scanned: {total_members}")
+
+    # Remove the progress message and send the statistics card
+    await progress_msg.delete()
+    await ctx.send(embed=embed)
 
 # --- 3. START BOT ---
 keep_alive()
