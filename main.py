@@ -5,6 +5,7 @@ from threading import Thread
 import os
 import asyncio
 import re
+import time
 
 # --- 1. FLASK WEB SERVER (To keep Render alive) ---
 app = Flask('')
@@ -24,7 +25,7 @@ def keep_alive():
 # --- 2. DISCORD BOT SETUP ---
 intents = discord.Intents.default()
 intents.members = True          # Required to track joins and role updates
-intents.message_content = True  # Required to read commands
+intents.message_content = True  # Required to read standard message commands
 
 bot = commands.Bot(
     command_prefix=commands.when_mentioned_or("!"), 
@@ -46,8 +47,16 @@ def get_join_log_channel(guild):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
+    try:
+        # Syncs modern slash (/) commands with Discord dynamically on startup
+        synced = await bot.tree.sync()
+        print(f"Synced {len(synced)} application slash command(s).")
+    except Exception as e:
+        print(f"Failed to sync slash commands: {e}")
 
-# --- NEW EVENT: Triggers ONLY when a member first hits the server ---
+# --- 3. AUTOMATED EVENT LISTENERS ---
+
+# Event: Triggers ONLY when a member first hits the server
 @bot.event
 async def on_member_join(member):
     # Find the "🍍・roles" channel by its exact name
@@ -59,7 +68,7 @@ async def on_member_join(member):
             delete_after=15.0
         )
 
-# Event: Triggers automatically when a member's roles change (Used ONLY for tracking logs now)
+# Event: Triggers automatically when a member's roles change (Used ONLY for tracking logs)
 @bot.event
 async def on_member_update(before, after):
     # Check if a role was added
@@ -75,7 +84,34 @@ async def on_member_update(before, after):
                     await channel.send(f"({after.id}) {after.mention} joined from **{source}**")
                 break 
 
-# Command 1: Clears the channel and re-checks everyone's roles
+# --- 4. MODERN SLASH (/) COMMANDS ---
+
+@bot.tree.command(name="timer", description="Create a live countdown timer embed!")
+@discord.app_commands.describe(
+    minutes="How many minutes from now the timer should end",
+    title="The title of the embed",
+    description="The main text inside the embed"
+)
+async def timer(interaction: discord.Interaction, minutes: int, title: str, description: str):
+    # Calculate the exact target time using the system clock epoch
+    end_time = int(time.time()) + (minutes * 60)
+    
+    # Discord formats: :R stands for relative countdown, :F stands for absolute time string
+    live_timer_string = f"⏳ **Time Remaining:** <t:{end_time}:R>\n📅 **Ends at:** <t:{end_time}:F>"
+    
+    embed = discord.Embed(
+        title=title,
+        description=f"{description}\n\n{live_timer_string}",
+        color=discord.Color.red()
+    )
+    embed.set_footer(text=f"Timer set by {interaction.user.display_name}")
+    
+    # Send the live embed directly to the text channel
+    await interaction.response.send_message(embed=embed)
+
+# --- 5. LEGACY PREFIX (!) COMMANDS ---
+
+# Command 1: Clears the log channel and re-checks everyone's roles
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def bgrefresh(ctx):
@@ -106,7 +142,6 @@ async def bgrefresh(ctx):
                 break
 
     await ctx.send(f"Refresh complete! Logged {count} members to {channel.mention}.")
-
 
 # Command 2: Incremental add
 @bot.command()
@@ -140,7 +175,6 @@ async def bgadd(ctx):
 
     await progress_msg.delete()
     await ctx.send(f"✅ Incremental add complete! Added **{added_count}** new missing members to {channel.mention}.")
-
 
 # Command 3: Displays real-time server referral statistics
 @bot.command()
@@ -181,7 +215,7 @@ async def bgstats(ctx):
     await progress_msg.delete()
     await ctx.send(embed=embed)
 
-# --- 3. START BOT ---
+# --- 6. START BOT ---
 keep_alive()
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
