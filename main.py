@@ -6,6 +6,7 @@ import os
 import asyncio
 import re
 import time
+from datetime import datetime
 
 # --- 1. FLASK WEB SERVER (To keep Render alive) ---
 app = Flask('')
@@ -59,7 +60,7 @@ async def on_ready():
 # Event: Triggers ONLY when a member first hits the server
 @bot.event
 async def on_member_join(member):
-    # Find the "🍍・roles" channel by its exact name
+    # Find the "roles" channel (Update name if the channel emoji changes)
     roles_channel = discord.utils.get(member.guild.text_channels, name="🍍・roles")
     if roles_channel:
         # Pings them immediately upon joining, then deletes the message 15 seconds later
@@ -86,6 +87,7 @@ async def on_member_update(before, after):
 
 # --- 4. MODERN SLASH (/) COMMANDS ---
 
+# Command 1: Relative Timer (Minutes from now)
 @bot.tree.command(name="timer", description="Create a live countdown timer embed!")
 @discord.app_commands.describe(
     minutes="How many minutes from now the timer should end",
@@ -96,18 +98,53 @@ async def timer(interaction: discord.Interaction, minutes: int, title: str, desc
     # Calculate the exact target time using the system clock epoch
     end_time = int(time.time()) + (minutes * 60)
     
-    # Discord formats: :R stands for relative countdown, :F stands for absolute time string
-    live_timer_string = f"⏳ **Time Remaining:** <t:{end_time}:R>\n📅 **Ends at:** <t:{end_time}:F>"
+    live_timer_string = f"Time Remaining: <t:{end_time}:R>\nEnds at: <t:{end_time}:F>"
     
+    # 0x1abc9c is the hex color code for 1abc9c in Discord's system
     embed = discord.Embed(
         title=title,
         description=f"{description}\n\n{live_timer_string}",
-        color=discord.Color.red()
+        color=0x1abc9c
     )
     embed.set_footer(text=f"Timer set by {interaction.user.display_name}")
     
-    # Send the live embed directly to the text channel
     await interaction.response.send_message(embed=embed)
+
+
+# Command 2: Absolute Countdown (Specific Date/Time)
+@bot.tree.command(name="countdown", description="Create a countdown to a specific date and time!")
+@discord.app_commands.describe(
+    date="Date format: YYYY-MM-DD (e.g. 2026-03-13)",
+    time_str="24-hour Time format: HH:MM (e.g. 17:00 for 5pm)",
+    title="The title of the embed",
+    description="The main text inside the embed"
+)
+async def countdown(interaction: discord.Interaction, date: str, time_str: str, title: str, description: str):
+    try:
+        # Combine the date and time strings and convert into a Python datetime object
+        datetime_str = f"{date} {time_str}"
+        target_datetime = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+        
+        # Convert target datetime to a Unix timestamp
+        end_time = int(target_datetime.timestamp())
+        
+        live_timer_string = f"Time Remaining: <t:{end_time}:R>\nEnds at: <t:{end_time}:F>"
+        
+        embed = discord.Embed(
+            title=title,
+            description=f"{description}\n\n{live_timer_string}",
+            color=0x1abc9c
+        )
+        embed.set_footer(text=f"Countdown set by {interaction.user.display_name}")
+        
+        await interaction.response.send_message(embed=embed)
+        
+    except ValueError:
+        # If they type the date/time format incorrectly, send a private error message
+        await interaction.response.send_message(
+            "Error: Invalid format. Use YYYY-MM-DD for date (like 2026-03-13) and HH:MM for time (like 17:00).", 
+            ephemeral=True
+        )
 
 # --- 5. LEGACY PREFIX (!) COMMANDS ---
 
@@ -152,7 +189,7 @@ async def bgadd(ctx):
         await ctx.send(f"Error: Could not find a channel named '{TARGET_CHANNEL_NAME}'.")
         return
 
-    progress_msg = await ctx.send("🔍 Checking existing logs and finding missing members...")
+    progress_msg = await ctx.send("Checking existing logs and finding missing members...")
 
     logged_user_ids = set()
     async for message in channel.history(limit=None):
@@ -174,7 +211,7 @@ async def bgadd(ctx):
                 break
 
     await progress_msg.delete()
-    await ctx.send(f"✅ Incremental add complete! Added **{added_count}** new missing members to {channel.mention}.")
+    await ctx.send(f"Incremental add complete! Added {added_count} new missing members to {channel.mention}.")
 
 # Command 3: Displays real-time server referral statistics
 @bot.command()
@@ -183,7 +220,7 @@ async def bgstats(ctx):
     no_role_count = 0
     total_members = 0
 
-    progress_msg = await ctx.send("📊 Calculating server referral statistics...")
+    progress_msg = await ctx.send("Calculating server referral statistics...")
 
     async for member in ctx.guild.fetch_members(limit=None):
         if member.bot:
@@ -202,14 +239,14 @@ async def bgstats(ctx):
         if not has_tracked_role:
             no_role_count += 1
 
-    embed = discord.Embed(title="📈 Server Referral Statistics", color=discord.Color.blue())
+    embed = discord.Embed(title="Server Referral Statistics", color=0x1abc9c)
     embed.set_thumbnail(url=ctx.guild.icon.url if ctx.guild.icon else None)
     
     for role_name, count in stats.items():
         display_name = role_name.title()
-        embed.add_field(name=f"🔗 {display_name}", value=f"**{count}** members", inline=False)
+        embed.add_field(name=f"{display_name}", value=f"{count} members", inline=False)
         
-    embed.add_field(name="❓ Unassigned / Other", value=f"**{no_role_count}** members", inline=False)
+    embed.add_field(name="Unassigned / Other", value=f"{no_role_count} members", inline=False)
     embed.set_footer(text=f"Total Members Scanned: {total_members}")
 
     await progress_msg.delete()
