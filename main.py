@@ -23,12 +23,14 @@ def keep_alive():
 
 # --- 2. DISCORD BOT SETUP ---
 intents = discord.Intents.default()
-intents.members = True          # Required to track role updates and scan members
-intents.message_content = True  # Required to read commands and channel history
+intents.members = True          # Required to scan member lists and track role updates
+intents.message_content = True  # Required to read commands and channel content
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(
+    command_prefix=commands.when_mentioned_or("!"), 
+    intents=intents
+)
 
-# Configuration: Your actual Discord Role IDs
 ROLE_MAPPING = {
     1457418827028500661: "youtube",
     1461009316424318997: "tiktok",
@@ -39,7 +41,6 @@ ROLE_MAPPING = {
 TARGET_CHANNEL_NAME = "📝┃join-log"
 
 def get_join_log_channel(guild):
-    """Helper function to find the channel by name."""
     return discord.utils.get(guild.text_channels, name=TARGET_CHANNEL_NAME)
 
 @bot.event
@@ -49,17 +50,28 @@ async def on_ready():
 # Event: Triggers automatically when a member's roles change
 @bot.event
 async def on_member_update(before, after):
+    # Check if a role was added
     if len(before.roles) < len(after.roles):
         added_roles = [role for role in after.roles if role not in before.roles]
         
+        # --- PART A: LOGGING JOIN ROLES ---
         for role in added_roles:
             if role.id in ROLE_MAPPING:
                 channel = get_join_log_channel(after.guild)
                 if channel:
                     source = ROLE_MAPPING[role.id]
-                    # Format: (ID) User joined from **source**
                     await channel.send(f"({after.id}) {after.mention} joined from **{source}**")
-                break
+                break  # Stop checking once we find a tracked role
+
+        # --- PART B: PING TO REACT IN "🍍・roles" ---
+        if added_roles:
+            roles_channel = discord.utils.get(after.guild.text_channels, name="🍍・roles")
+            if roles_channel:
+                # Sends message pinging the user, and automatically deletes it after 15 seconds
+                await roles_channel.send(
+                    f"{after.mention} React above to get notified.", 
+                    delete_after=15.0
+                )
 
 # Command 1: Clears the channel and re-checks everyone's roles
 @bot.command()
@@ -93,7 +105,8 @@ async def bgrefresh(ctx):
 
     await ctx.send(f"Refresh complete! Logged {count} members to {channel.mention}.")
 
-# Command 2: Incremental add - only logs members who aren't already in the channel text
+
+# Command 2: Incremental add
 @bot.command()
 @commands.has_permissions(manage_messages=True)
 async def bgadd(ctx):
@@ -104,19 +117,16 @@ async def bgadd(ctx):
 
     progress_msg = await ctx.send("🔍 Checking existing logs and finding missing members...")
 
-    # 1. Scan the channel history to find all User IDs already mentioned
     logged_user_ids = set()
     async for message in channel.history(limit=None):
-        # Find any patterns matching numbers inside parentheses, e.g., (123456789)
         matches = re.findall(r'\((\d+)\)', message.content)
         for user_id in matches:
             logged_user_ids.add(int(user_id))
 
-    # 2. Scan server members and add them if they have a role but aren't logged yet
     added_count = 0
     async for member in ctx.guild.fetch_members(limit=None):
         if member.bot or member.id in logged_user_ids:
-            continue  # Skip bots and already logged users
+            continue
             
         for role in member.roles:
             if role.id in ROLE_MAPPING:
@@ -128,6 +138,7 @@ async def bgadd(ctx):
 
     await progress_msg.delete()
     await ctx.send(f"✅ Incremental add complete! Added **{added_count}** new missing members to {channel.mention}.")
+
 
 # Command 3: Displays real-time server referral statistics
 @bot.command()
