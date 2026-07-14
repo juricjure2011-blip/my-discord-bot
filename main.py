@@ -7,6 +7,7 @@ import asyncio
 import re
 import time
 from datetime import datetime
+from dateutil.relativedelta import relativedelta # This makes accurate month/week math easy
 
 # --- 1. FLASK WEB SERVER (To keep Render alive) ---
 app = Flask('')
@@ -87,20 +88,47 @@ async def on_member_update(before, after):
 
 # --- 4. MODERN SLASH (/) COMMANDS ---
 
-# Command 1: Relative Timer (Minutes from now)
+# Command 1: Fully Customizable Relative Timer
 @bot.tree.command(name="timer", description="Create a live countdown timer embed!")
 @discord.app_commands.describe(
-    minutes="How many minutes from now the timer should end",
     title="The title of the embed",
-    description="The main text inside the embed"
+    description="The main text inside the embed",
+    seconds="Number of seconds",
+    minutes="Number of minutes",
+    hours="Number of hours",
+    days="Number of days",
+    weeks="Number of weeks",
+    months="Number of months"
 )
-async def timer(interaction: discord.Interaction, minutes: int, title: str, description: str):
-    # Calculate the exact target time using the system clock epoch
-    end_time = int(time.time()) + (minutes * 60)
+async def timer(
+    interaction: discord.Interaction, 
+    title: str, 
+    description: str,
+    seconds: int = 0,
+    minutes: int = 0,
+    hours: int = 0,
+    days: int = 0,
+    weeks: int = 0,
+    months: int = 0
+):
+    # Acknowledge privately so there is no public "used a command" tag on the embed
+    await interaction.response.send_message("Creating timer...", ephemeral=True)
     
-    live_timer_string = f"Time Remaining: <t:{end_time}:R>\nEnds at: <t:{end_time}:F>"
+    # Calculate target datetime using relative time offsets
+    current_time = datetime.now()
+    target_time = current_time + relativedelta(
+        months=months,
+        weeks=weeks,
+        days=days,
+        hours=hours,
+        minutes=minutes,
+        seconds=seconds
+    )
     
-    # 0x1abc9c is the hex color code for 1abc9c in Discord's system
+    end_timestamp = int(target_time.timestamp())
+    
+    live_timer_string = f"Time Remaining: <t:{end_timestamp}:R>\nEnds at: <t:{end_timestamp}:F>"
+    
     embed = discord.Embed(
         title=title,
         description=f"{description}\n\n{live_timer_string}",
@@ -108,7 +136,8 @@ async def timer(interaction: discord.Interaction, minutes: int, title: str, desc
     )
     embed.set_footer(text=f"Timer set by {interaction.user.display_name}")
     
-    await interaction.response.send_message(embed=embed)
+    # Send directly to the channel as a clean, untagged message
+    await interaction.channel.send(embed=embed)
 
 
 # Command 2: Absolute Countdown (Specific Date/Time)
@@ -128,6 +157,9 @@ async def countdown(interaction: discord.Interaction, date: str, time_str: str, 
         # Convert target datetime to a Unix timestamp
         end_time = int(target_datetime.timestamp())
         
+        # Acknowledge privately
+        await interaction.response.send_message("Creating countdown...", ephemeral=True)
+        
         live_timer_string = f"Time Remaining: <t:{end_time}:R>\nEnds at: <t:{end_time}:F>"
         
         embed = discord.Embed(
@@ -137,7 +169,8 @@ async def countdown(interaction: discord.Interaction, date: str, time_str: str, 
         )
         embed.set_footer(text=f"Countdown set by {interaction.user.display_name}")
         
-        await interaction.response.send_message(embed=embed)
+        # Send directly to the channel as a clean, untagged message
+        await interaction.channel.send(embed=embed)
         
     except ValueError:
         # If they type the date/time format incorrectly, send a private error message
