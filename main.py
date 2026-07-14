@@ -23,8 +23,8 @@ def keep_alive():
 
 # --- 2. DISCORD BOT SETUP ---
 intents = discord.Intents.default()
-intents.members = True          # Required to scan member lists and track role updates
-intents.message_content = True  # Required to read commands and channel content
+intents.members = True          # Required to track joins and role updates
+intents.message_content = True  # Required to read commands
 
 bot = commands.Bot(
     command_prefix=commands.when_mentioned_or("!"), 
@@ -47,31 +47,33 @@ def get_join_log_channel(guild):
 async def on_ready():
     print(f"Logged in as {bot.user.name}")
 
-# Event: Triggers automatically when a member's roles change
+# --- NEW EVENT: Triggers ONLY when a member first hits the server ---
+@bot.event
+async def on_member_join(member):
+    # Find the "🍍・roles" channel by its exact name
+    roles_channel = discord.utils.get(member.guild.text_channels, name="🍍・roles")
+    if roles_channel:
+        # Pings them immediately upon joining, then deletes the message 15 seconds later
+        await roles_channel.send(
+            f"{member.mention} React above to get notified.", 
+            delete_after=15.0
+        )
+
+# Event: Triggers automatically when a member's roles change (Used ONLY for tracking logs now)
 @bot.event
 async def on_member_update(before, after):
     # Check if a role was added
     if len(before.roles) < len(after.roles):
         added_roles = [role for role in after.roles if role not in before.roles]
         
-        # --- PART A: LOGGING JOIN ROLES ---
+        # LOGGING JOIN ROLES ONLY
         for role in added_roles:
             if role.id in ROLE_MAPPING:
                 channel = get_join_log_channel(after.guild)
                 if channel:
                     source = ROLE_MAPPING[role.id]
                     await channel.send(f"({after.id}) {after.mention} joined from **{source}**")
-                break  # Stop checking once we find a tracked role
-
-        # --- PART B: PING TO REACT IN "🍍・roles" ---
-        if added_roles:
-            roles_channel = discord.utils.get(after.guild.text_channels, name="🍍・roles")
-            if roles_channel:
-                # Sends message pinging the user, and automatically deletes it after 15 seconds
-                await roles_channel.send(
-                    f"{after.mention} React above to get notified.", 
-                    delete_after=15.0
-                )
+                break 
 
 # Command 1: Clears the channel and re-checks everyone's roles
 @bot.command()
